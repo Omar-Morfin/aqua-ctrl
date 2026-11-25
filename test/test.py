@@ -1,40 +1,101 @@
-# SPDX-FileCopyrightText: © 2024 Tiny Tapeout
-# SPDX-License-Identifier: Apache-2.0
-
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles
+from cocotb.triggers import ClockCycles, Timer
 
 
 @cocotb.test()
 async def test_project(dut):
-    dut._log.info("Start")
 
-    # Set the clock period to 10 us (100 KHz)
     clock = Clock(dut.clk, 10, unit="us")
     cocotb.start_soon(clock.start())
 
-    # Reset
-    dut._log.info("Reset")
+    # Reinicio del sistema
     dut.ena.value = 1
     dut.ui_in.value = 0
     dut.uio_in.value = 0
     dut.rst_n.value = 0
+
     await ClockCycles(dut.clk, 10)
+
     dut.rst_n.value = 1
 
-    dut._log.info("Test project behavior")
+    async def comprobar(entrada, esperado, mensaje):
 
-    # Set the input values you want to test
-    dut.ui_in.value = 20
-    dut.uio_in.value = 30
+        dut.ui_in.value = entrada
 
-    # Wait for one clock cycle to see the output values
-    await ClockCycles(dut.clk, 1)
+        await ClockCycles(dut.clk, 3)
+        await Timer(1, unit="us")
 
-    # The following assersion is just an example of how to check the output values.
-    # Change it to match the actual expected output of your module:
-    assert dut.uo_out.value == 50
+        resultado = int(dut.uo_out.value)
 
-    # Keep testing the module by changing the input values, waiting for
-    # one or more clock cycles, and asserting the expected output values.
+        assert resultado == esperado, (
+            f"{mensaje}: esperado={esperado}, "
+            f"obtenido={resultado}"
+        )
+
+        dut._log.info(f"CORRECTO: {mensaje}")
+
+    # Prueba 1: Tanque debajo del minimo
+    await comprobar(
+        0b00001100,
+        0b00000011,
+        "Encendido de bomba"
+    )
+
+    # Prueba 2: Nivel intermedio durante llenado
+    await comprobar(
+        0b00001101,
+        0b00000001,
+        "Bomba continua encendida"
+    )
+
+    # Prueba 3: Tanque lleno
+    await comprobar(
+        0b00001111,
+        0b00000100,
+        "Bomba apagada por tanque lleno"
+    )
+
+    # Prueba 4: Nivel intermedio durante vaciado
+    await comprobar(
+        0b00001101,
+        0b00000000,
+        "Bomba permanece apagada"
+    )
+
+    # Prueba 5: Falta de agua en cisterna
+    await comprobar(
+        0b00001000,
+        0b00010010,
+        "Bloqueo por falta de agua"
+    )
+
+    # Prueba 6: Sensores contradictorios
+    await comprobar(
+        0b00001110,
+        0b00011000,
+        "Alarma por falla de sensores"
+    )
+
+    # Prueba 7: Memoria de alarma
+    await comprobar(
+        0b00001100,
+        0b00011010,
+        "Alarma permanece activa"
+    )
+
+    # Prueba 8: Reinicio de alarma
+    await comprobar(
+        0b00011100,
+        0b00000011,
+        "Alarma eliminada y bomba habilitada"
+    )
+
+    # Prueba 9: Sistema deshabilitado
+    await comprobar(
+        0b00000100,
+        0b00010010,
+        "Sistema deshabilitado"
+    )
+
+    dut._log.info("TODAS LAS PRUEBAS COMPLETADAS")
